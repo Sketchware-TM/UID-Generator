@@ -1,45 +1,65 @@
+<div align="center">
+![Made by](https://img.shields.io/badge/Made%20by-SkTeamProject-black?style=for-the-badge&logo=github)
+![Year](https://img.shields.io/badge/©-2026-blueviolet?style=for-the-badge)
+</div>
+
 # UID-Generator
 ![Python](https://img.shields.io/badge/Python-3.11%2B-brightgreen?logo=python&logoColor=white)
-![License](https://img.shields.io/github/license/ExnoxCH/UID-Generator?logo=github)
+![Version](https://img.shields.io/badge/Version-1.1%20Beta-blueviolet)
+![License](https://img.shields.io/github/license/Sketchware-TM/UID-Generator?logo=github)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20(WSL)%20%7C%20Android-lightgrey?logo=linux&logoColor=white)
+
 ## 🛡️ Military Grade UID Generator & Licensing System
 
 A powerful Python-based security tool to generate unique, hardware-bound UIDs for device authentication. It features a built-in time-based access control system to manage and restrict device-specific entry.
 
-## ⚠️Warning
-As the creator of this script, I do not recommend that you use this UID for websites or applications, because the password is easy to crack, the password uses XOR and Base64.
+## ⚠️ Warning
+As the creator of this script, I do not recommend using this as the sole authentication layer for production websites or applications. While v1.1 Beta upgrades password protection to AES (Fernet) wrapped in XOR encoding instead of plain XOR + Base64, it's still best suited for personal projects, license-gating scripts, and device-binding tools rather than critical production auth.
+
+## 🆕 What's New in v1.1 Beta
+* **Triple-Layer Encryption**: Passwords are now protected with AES (Fernet) derived via PBKDF2-HMAC-SHA256 (100k iterations), then wrapped again in XOR encoding.
+* **Multi-Format UID Generation**: Generate `DEFAULT`, `SCRU160`, `NANO`, `UUID4`, or `ALL` formats at once.
+* **CRC32 Checksum**: Default-format UIDs now embed a checksum for tamper/typo detection.
+* **Collision Guard ("Battlefield Mode")**: Automatically detects and regenerates on ID collisions.
+* **New Commands**: `--delete`, `--export`, and `--verify` for full UID lifecycle management.
+* **Integrity Checksum**: Generated UID data is hashed (SHA-256) and stored alongside the license file.
 
 ### 🚀 Key Features
-* **Hardware Binding**: UIDs are uniquely generated based on device fingerprinting (OS, Hostname, Architecture).
+* **Hardware Binding**: UIDs are uniquely generated based on device fingerprinting (OS, Hostname, Architecture, and Android device props when available).
 * **Dynamic Expiration**: Custom time duration from Seconds, Minutes, Hours, Days, Months, to Years.
-* **XOR Encryption**: Protects UID passwords using XOR encryption and Base64 encoding.
+* **Layered Encryption**: Protects UID passwords using AES (Fernet) + XOR encoding.
+* **Multiple ID Formats**: Custom checksummed format, SCRU160, NanoID, and UUID4.
 * **Progress Bar**: Beautiful terminal UI that adapts to your screen size (Termux/Linux/PC).
 
-⚙️ Usage:
-1. Generate new UID
+## ⚙️ Usage
+1. Generate new UID (optionally pick a format)
 ```bash
-python generateUID.py --create
+python UIDGenerator.py --create [DEFAULT|SCRU160|NANO|UUID4|ALL]
 ```
 2. Check Validity & Remaining Time
 ```bash
-python generateUID.py --check
+python UIDGenerator.py --check
 ```
 3. Renew License
 ```bash
-python generateUID.py --renew <PASSWORD>
+python UIDGenerator.py --renew <PASSWORD>
 ```
 4. Show Recovered Password
 ```bash
-python generateUID.py --show-password
+python UIDGenerator.py --show-password
 ```
-## Command to run .so file
-* **Indonesia**
+5. Verify a Generated UID
 ```bash
-python3 -c "import UIDGenerator"
+python UIDGenerator.py --verify <UID>
 ```
-* **English**
+6. Export UID Data to JSON
 ```bash
-python3 -c "import UIDGeneratorEN"
+python UIDGenerator.py --export
 ```
+7. Delete the UID File
+```bash
+python UIDGenerator.py --delete
+```
+
 ## Screenshot
 ![Screenshot](.assets/ss.png)
