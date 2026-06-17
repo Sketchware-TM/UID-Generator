@@ -1,1 +1,4 @@
 colorama
+cryptography
+scru160
+nanoid
