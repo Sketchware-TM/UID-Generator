@@ -1,8 +1,3 @@
-<div align="center">
-![Made by](https://img.shields.io/badge/Made%20by-SkTeamProject-black?style=for-the-badge&logo=github)
-![Year](https://img.shields.io/badge/©-2026-blueviolet?style=for-the-badge)
-</div>
-
 # UID-Generator
 ![Python](https://img.shields.io/badge/Python-3.11%2B-brightgreen?logo=python&logoColor=white)
 ![Version](https://img.shields.io/badge/Version-1.1%20Beta-blueviolet)
@@ -63,3 +58,8 @@ python UIDGenerator.py --delete
 
 ## Screenshot
 ![Screenshot](.assets/ss.png)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Made By-SkTeamProject-blue?style=for-the-badge&logo=github" alt="Collaborator">
+  <img src="https://img.shields.io/badge/©-2026-blueviolet?style=for-the-badge" alt="Year">
+</p>
