@@ -87,8 +87,8 @@ def LOG_ERROR(msg):
 def LOG_SUCCESS(msg):
     print(f"{Fore.GREEN}{BOLD}[SUCCESS]{RESET} {Fore.GREEN}{BOLD}{msg}{RESET}")
 
-# ============= ONE‑LINE PROGRESS BAR (auto‑truncate) =============
-def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None, fill='█', print_end="\r"):
+# ============= ONE‑LINE PROGRESS BAR (NO EXTRA NEW LINES) =============
+def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None, fill='█'):
     try:
         cols = shutil.get_terminal_size().columns
     except:
@@ -100,27 +100,41 @@ def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None
         eta_str = f"ETA: {eta:.1f}s"
     else:
         eta_str = "ETA: --"
-    if length is None:
-        prefix_len = len(prefix) + 2
-        suffix_len = len(suffix) + len(eta_str) + 8
-        max_bar_len = cols - prefix_len - suffix_len - 5
-        length = max(10, max_bar_len)
-    filled_length = int(length * iteration // total)
-    bar = fill * filled_length + '-' * (length - filled_length)
+    
+    base = f"{prefix} 100.0% {suffix} [{eta_str}]"
+    bar_len = cols - len(base) - 4
+    if bar_len < 10:
+        bar_len = 10
+    filled = int(bar_len * iteration / total)
+    bar = fill * filled + '-' * (bar_len - filled)
     line = f'\r{prefix} |{bar}| {percent}% {suffix} [{eta_str}]'
+    
     if len(line) > cols:
-        max_suffix_len = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 4
-        if max_suffix_len < 5:
-            line = f'\r{prefix} |{bar}| {percent}% ...'
+        available = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 4
+        if available < 5:
+            suffix = ''
+            eta_str = ''
         else:
-            if len(suffix) > max_suffix_len:
-                suffix = suffix[:max_suffix_len-3] + "..."
+            if len(suffix) + len(eta_str) + 4 > available:
+                max_suffix = available - len(eta_str) - 4
+                if max_suffix < 3:
+                    suffix = ''
+                else:
+                    suffix = suffix[:max_suffix-3] + "..."
             line = f'\r{prefix} |{bar}| {percent}% {suffix} [{eta_str}]'
+        if len(line) > cols:
+            line = f'\r{prefix} |{bar}| {percent}% {suffix}'
             if len(line) > cols:
-                line = f'\r{prefix} |{bar}| {percent}% {suffix} ...'
-    print(line, end=print_end, flush=True)
+                max_suffix = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 3
+                if max_suffix < 3:
+                    suffix = ''
+                else:
+                    suffix = suffix[:max_suffix-3] + "..."
+                line = f'\r{prefix} |{bar}| {percent}% {suffix}'
+    line = line.ljust(cols)
+    print(line, end='', flush=True)
     if iteration == total:
-        print()
+        print()  # newline after finish
 
 progress_bar._start_time = 0
 
@@ -382,7 +396,7 @@ def main():
     
     if args[0] == "--create":
         if os.path.exists(FILE_NAME):
-            LOG_WARN("UID already exists. Use --renew to extend.")
+            LOG_WARN("UID already exists. Use --renew.")
             return
         
         format_type = args[1].upper() if len(args) > 1 else "DEFAULT"
@@ -419,31 +433,34 @@ def main():
                 LOG_ERROR("Invalid choice!")
                 return
         except ValueError:
-            LOG_ERROR("Please enter a number!")
+            LOG_ERROR("Enter a number!")
             return
         
         expire_text = get_expire_text(expire_dict)
         
-        # === PROGRESS BAR ===
-        total_steps = 100
-        progress_bar._start_time = time.time()
-        
-        # Step 1: Generate UID
-        for i in range(1, 40):
-            progress_bar(i, total_steps, prefix='Progress', suffix='Generating UID...', length=None)
-            time.sleep(0.015)
+        # Generate UID and password
         uid_data = generator.generate(format_type, prefix="UID")
-        
-        # Step 2: Encrypt
-        for i in range(40, 70):
-            progress_bar(i, total_steps, prefix='Progress', suffix='Encrypting data...', length=None)
-            time.sleep(0.015)
         raw_password = secrets.token_urlsafe(16)
         encrypted_password = triple_encrypt(raw_password, XOR_KEY)
-        
-        # Step 3: Save file
         uid_json = json.dumps(uid_data)
         data_hmac = compute_hmac(uid_json)
+        
+        # === PROGRESS BAR (ONE LINE, NO EXTRA NEW LINES) ===
+        total_steps = 100
+        progress_bar._start_time = time.time()
+        for i in range(1, total_steps + 1):
+            if i < 40:
+                suffix = 'Generating UID...'
+            elif i < 70:
+                suffix = 'Encrypting data...'
+            else:
+                suffix = 'Saving file...'
+            if i == total_steps:
+                suffix = 'Done!'
+            progress_bar(i, total_steps, prefix='Progress', suffix=suffix, length=None)
+            time.sleep(0.015)
+        
+        # Write file after progress completes
         with open(FILE_NAME, "w") as f:
             f.write(f"""# UID Information v{VERSION}
 # Generated: {uid_data['timestamp']}
@@ -456,10 +473,6 @@ CREATED_AT : {uid_data['timestamp']}
 EXPIRY : {expire_text}
 HMAC_SIG : {data_hmac}
 """)
-        for i in range(70, 101):
-            progress_bar(i, total_steps, prefix='Progress', suffix='Saving file...', length=None)
-            time.sleep(0.015)
-        progress_bar(total_steps, total_steps, prefix='Progress', suffix='Done!', length=None)
         
         LOG_SUCCESS("UID successfully created!")
         print(f"\n{Fore.WHITE}{'═'*60}")

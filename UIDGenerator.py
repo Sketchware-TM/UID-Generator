@@ -70,7 +70,7 @@ else:
 FILE_NAME = "UID.md"
 XOR_KEY = "lSoXWboNRdUsgOtzGdBbJxaoBdvGmYDWvjvZxzxIFoCFsfEUryLXnjDomACMGNIC"
 SALT = b'\x05-\x17\x89h\xed\xb8\x9bM6m\x97_\xe3\x1auI\x91\xff\x81\x0can\x08\xc8G&\xcc^4\xb0-\xdaO;\x08w\xf6\xf80\xac\xd1a!1\xae~g\xed-W"\xad\xfb$\x08\xe5y:\xd4\xad\xa6\xb6\x07'
-VERSION = "1.1.1"  # TETAP
+VERSION = "1.1.1"
 
 BOLD = Style.BRIGHT
 RESET = Style.RESET_ALL
@@ -87,14 +87,12 @@ def LOG_ERROR(msg):
 def LOG_SUCCESS(msg):
     print(f"{Fore.GREEN}{BOLD}[SUKSES]{RESET} {Fore.GREEN}{BOLD}{msg}{RESET}")
 
-# ============= PROGRESS BAR (SATU BARIS + TRUNCATE) =============
-def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None, fill='█', print_end="\r"):
-    # Ambil lebar terminal
+# ============= PROGRESS BAR (SATU BARIS, TIDAK BIKIN BARIS BARU) =============
+def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None, fill='█'):
     try:
         cols = shutil.get_terminal_size().columns
     except:
         cols = 80
-    # Build the line components
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     elapsed = time.time() - progress_bar._start_time
     if iteration > 0:
@@ -102,36 +100,43 @@ def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None
         eta_str = f"ETA: {eta:.1f}s"
     else:
         eta_str = "ETA: --"
-    # Bar length: at least 10, but reduce if total line too long
-    if length is None:
-        # Estimate lengths of other parts
-        prefix_len = len(prefix) + 2  # +2 for spaces
-        suffix_len = len(suffix) + len(eta_str) + 8  # percent, brackets, etc.
-        max_bar_len = cols - prefix_len - suffix_len - 5  # -5 for safety
-        length = max(10, max_bar_len)
-    filled_length = int(length * iteration // total)
-    bar = fill * filled_length + '-' * (length - filled_length)
-    # Construct the line
+    
+    # Hitung panjang bar yang tersedia
+    base = f"{prefix} 100.0% {suffix} [{eta_str}]"
+    bar_len = cols - len(base) - 4
+    if bar_len < 10:
+        bar_len = 10
+    filled = int(bar_len * iteration / total)
+    bar = fill * filled + '-' * (bar_len - filled)
     line = f'\r{prefix} |{bar}| {percent}% {suffix} [{eta_str}]'
-    # If line longer than terminal columns, truncate suffix
+    # Potong jika kepanjangan
     if len(line) > cols:
-        # Truncate suffix: keep prefix + bar + percent, then add "..." + eta
-        # But we need to keep eta if possible
-        # Let's shorten suffix
-        max_suffix_len = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 4  # for "[...]"
-        if max_suffix_len < 5:
-            # Too narrow, just show minimal
-            line = f'\r{prefix} |{bar}| {percent}% ...'
+        available = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 4
+        if available < 5:
+            suffix = ''
+            eta_str = ''
         else:
-            if len(suffix) > max_suffix_len:
-                suffix = suffix[:max_suffix_len-3] + "..."
+            if len(suffix) + len(eta_str) + 4 > available:
+                max_suffix = available - len(eta_str) - 4
+                if max_suffix < 3:
+                    suffix = ''
+                else:
+                    suffix = suffix[:max_suffix-3] + "..."
             line = f'\r{prefix} |{bar}| {percent}% {suffix} [{eta_str}]'
-            # If still too long, remove eta
+        if len(line) > cols:
+            line = f'\r{prefix} |{bar}| {percent}% {suffix}'
             if len(line) > cols:
-                line = f'\r{prefix} |{bar}| {percent}% {suffix} ...'
-    print(line, end=print_end, flush=True)
+                max_suffix = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 3
+                if max_suffix < 3:
+                    suffix = ''
+                else:
+                    suffix = suffix[:max_suffix-3] + "..."
+                line = f'\r{prefix} |{bar}| {percent}% {suffix}'
+    # Pad dengan spasi untuk membersihkan sisa baris sebelumnya
+    line = line.ljust(cols)
+    print(line, end='', flush=True)
     if iteration == total:
-        print()  # newline after finish
+        print()  # newline setelah selesai
 
 progress_bar._start_time = 0
 
@@ -255,7 +260,6 @@ class UIDGenerator:
         self.battlefield_mode = True
         self.generated_ids = set()
         self.fingerprint = device_fingerprint_enhanced()
-        # Gak print fingerprint di sini
     
     def _generate_scr160(self) -> str:
         try:
@@ -436,26 +440,29 @@ def main():
         
         expire_text = get_expire_text(expire_dict)
         
-        # === PROGRESS BAR (SATU BARIS) ===
-        total_steps = 100
-        progress_bar._start_time = time.time()
-        
-        # Tahap 1: Generate UID
-        for i in range(1, 40):
-            progress_bar(i, total_steps, prefix='Progress', suffix='Generating UID...', length=None)
-            time.sleep(0.015)
+        # Generate UID dan password
         uid_data = generator.generate(format_type, prefix="UID")
-        
-        # Tahap 2: Encrypt
-        for i in range(40, 70):
-            progress_bar(i, total_steps, prefix='Progress', suffix='Encrypting data...', length=None)
-            time.sleep(0.015)
         raw_password = secrets.token_urlsafe(16)
         encrypted_password = triple_encrypt(raw_password, XOR_KEY)
-        
-        # Tahap 3: Save file
         uid_json = json.dumps(uid_data)
         data_hmac = compute_hmac(uid_json)
+        
+        # === PROGRESS BAR (SATU BARIS, LOOP 1-100) ===
+        total_steps = 100
+        progress_bar._start_time = time.time()
+        for i in range(1, total_steps + 1):
+            if i < 40:
+                suffix = 'Generating UID...'
+            elif i < 70:
+                suffix = 'Encrypting data...'
+            else:
+                suffix = 'Saving file...'
+            if i == total_steps:
+                suffix = 'Selesai!'
+            progress_bar(i, total_steps, prefix='Progress', suffix=suffix, length=None)
+            time.sleep(0.015)
+        
+        # Tulis file setelah progress selesai
         with open(FILE_NAME, "w") as f:
             f.write(f"""# UID Information v{VERSION}
 # Generated: {uid_data['timestamp']}
@@ -468,10 +475,6 @@ CREATED_AT : {uid_data['timestamp']}
 EXPIRY : {expire_text}
 HMAC_SIG : {data_hmac}
 """)
-        for i in range(70, 101):
-            progress_bar(i, total_steps, prefix='Progress', suffix='Saving file...', length=None)
-            time.sleep(0.015)
-        progress_bar(total_steps, total_steps, prefix='Progress', suffix='Selesai!', length=None)
         
         LOG_SUCCESS("UID berhasil dibuat!")
         print(f"\n{Fore.WHITE}{'═'*60}")
@@ -552,7 +555,7 @@ HMAC_SIG : {data_hmac}
         else:
             LOG_SUCCESS(f"✅ UID belum expired. Sisa {human_time(remain)}")
         
-        # Tampilkan semua info (termasuk UID dari file)
+        # Tampilkan semua info
         print(f"\n{Fore.WHITE}{'═'*60}")
         LOG_INFO(f"UID (default)      : {Fore.YELLOW}{BOLD}{uid_json.get('formats', {}).get('default', 'N/A')}")
         LOG_INFO(f"PASSWORD (enc)     : {Fore.RED}{stored_pwd_enc if stored_pwd_enc else 'N/A'}")
