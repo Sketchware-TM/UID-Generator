@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# UIDGenerator.py v1.1.1 - ENGLISH VERSION
 
 import os
 import sys
@@ -16,23 +17,36 @@ import platform
 import struct
 import socket
 import re
+import hmac
+import shutil
 from datetime import datetime, timedelta
 
 def install_package(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# OS detection
+IS_ANDROID = platform.system() == "Android" or "TERMUX" in os.environ.get("TERMUX_VERSION", "")
+USE_MACHINEID = not IS_ANDROID
 
 def ensure_dependencies():
     required = {
         "cryptography": "cryptography",
         "colorama": "colorama"
     }
+    if USE_MACHINEID:
+        try:
+            importlib.import_module("machineid")
+        except ImportError:
+            print("[*] Installing py-machineid for better fingerprint...")
+            install_package("py-machineid")
+            print("[+] py-machineid installed.")
     for module, package in required.items():
         try:
             importlib.import_module(module)
         except ImportError:
             print(f"[*] Installing missing dependency: {package} ...")
             install_package(package)
-            print(f"[+] {package} installed successfully.")
+            print(f"[+] {package} installed.")
 
 ensure_dependencies()
 
@@ -43,10 +57,20 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
+# Import machineid only if allowed
+if USE_MACHINEID:
+    try:
+        import machineid
+        MACHINEID_AVAILABLE = True
+    except ImportError:
+        MACHINEID_AVAILABLE = False
+else:
+    MACHINEID_AVAILABLE = False
+
 FILE_NAME = "UID.md"
 XOR_KEY = "lSoXWboNRdUsgOtzGdBbJxaoBdvGmYDWvjvZxzxIFoCFsfEUryLXnjDomACMGNIC"
 SALT = b'\x05-\x17\x89h\xed\xb8\x9bM6m\x97_\xe3\x1auI\x91\xff\x81\x0can\x08\xc8G&\xcc^4\xb0-\xdaO;\x08w\xf6\xf80\xac\xd1a!1\xae~g\xed-W"\xad\xfb$\x08\xe5y:\xd4\xad\xa6\xb6\x07'
-VERSION = "1.1 Beta"
+VERSION = "1.1.1"
 
 BOLD = Style.BRIGHT
 RESET = Style.RESET_ALL
@@ -63,6 +87,103 @@ def LOG_ERROR(msg):
 def LOG_SUCCESS(msg):
     print(f"{Fore.GREEN}{BOLD}[SUCCESS]{RESET} {Fore.GREEN}{BOLD}{msg}{RESET}")
 
+# ============= ONE‑LINE PROGRESS BAR (auto‑truncate) =============
+def progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=None, fill='█', print_end="\r"):
+    try:
+        cols = shutil.get_terminal_size().columns
+    except:
+        cols = 80
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    elapsed = time.time() - progress_bar._start_time
+    if iteration > 0:
+        eta = (elapsed / iteration) * (total - iteration)
+        eta_str = f"ETA: {eta:.1f}s"
+    else:
+        eta_str = "ETA: --"
+    if length is None:
+        prefix_len = len(prefix) + 2
+        suffix_len = len(suffix) + len(eta_str) + 8
+        max_bar_len = cols - prefix_len - suffix_len - 5
+        length = max(10, max_bar_len)
+    filled_length = int(length * iteration // total)
+    bar = fill * filled_length + '-' * (length - filled_length)
+    line = f'\r{prefix} |{bar}| {percent}% {suffix} [{eta_str}]'
+    if len(line) > cols:
+        max_suffix_len = cols - len(f'\r{prefix} |{bar}| {percent}% ') - 4
+        if max_suffix_len < 5:
+            line = f'\r{prefix} |{bar}| {percent}% ...'
+        else:
+            if len(suffix) > max_suffix_len:
+                suffix = suffix[:max_suffix_len-3] + "..."
+            line = f'\r{prefix} |{bar}| {percent}% {suffix} [{eta_str}]'
+            if len(line) > cols:
+                line = f'\r{prefix} |{bar}| {percent}% {suffix} ...'
+    print(line, end=print_end, flush=True)
+    if iteration == total:
+        print()
+
+progress_bar._start_time = 0
+
+# ============= ENHANCED DEVICE FINGERPRINT (silent) =============
+def get_android_prop(prop_name):
+    try:
+        result = subprocess.check_output(['getprop', prop_name], text=True).strip()
+        return result if result else None
+    except:
+        return None
+
+def device_fingerprint_enhanced() -> str:
+    components = []
+    if MACHINEID_AVAILABLE:
+        try:
+            mid = machineid.hashed_id('uid_generator_v12')
+            components.append(f"MACHINEID:{mid}")
+        except Exception:
+            pass
+    components.append(f"SYSTEM:{platform.system()}")
+    components.append(f"MACHINE:{platform.machine()}")
+    components.append(f"ARCH:{platform.architecture()[0]}")
+    components.append(f"BITS:{struct.calcsize('P') * 8}")
+    components.append(f"CPU:{os.cpu_count()}")
+    android_props = ['ro.serialno', 'ro.product.device', 'ro.product.model', 
+                     'ro.product.manufacturer', 'ro.build.fingerprint']
+    found_android = False
+    for prop in android_props:
+        val = get_android_prop(prop)
+        if val:
+            components.append(f"{prop.upper()}:{val}")
+            found_android = True
+    if not found_android:
+        mac = uuid.getnode()
+        if mac & 0xFFFFFFFFFFFF:
+            components.append(f"MAC:{mac:012X}")
+        else:
+            components.append("MAC:UNKNOWN")
+    try:
+        components.append(f"HOST:{socket.gethostname()}")
+    except:
+        pass
+    try:
+        components.append(f"USER:{os.getlogin()}")
+    except:
+        pass
+    try:
+        if platform.system() == "Windows":
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+            val, _ = winreg.QueryValueEx(key, "PROCESSOR_IDENTIFIER")
+            components.append(f"PROC:{val}")
+    except:
+        pass
+    components.append(f"TS:{int(time.time() / 86400)}")
+    raw = "|".join(components) + "|SALT_UID_V12"
+    try:
+        return hashlib.sha3_512(raw.encode()).hexdigest()[:64]
+    except:
+        return hashlib.sha512(raw.encode()).hexdigest()[:64]
+
+# ============= CRYPTO CORE =============
 def generate_key_from_password(password: str, salt: bytes = None) -> bytes:
     if salt is None:
         salt = SALT
@@ -103,44 +224,26 @@ def triple_decrypt(encoded: str, password: str) -> str:
     aes_decrypted = aes_decrypt(xor_decrypted, password)
     return aes_decrypted
 
-def get_android_prop(prop_name):
-    try:
-        result = subprocess.check_output(['getprop', prop_name], text=True).strip()
-        return result if result else None
-    except:
-        return None
+# ============= HMAC-SHA256 (internal) =============
+def compute_hmac(data: str, key: str = None) -> str:
+    if key is None:
+        key = XOR_KEY + base64.b64encode(SALT).decode()
+    return hmac.new(
+        key.encode(),
+        data.encode(),
+        hashlib.sha256
+    ).hexdigest()
 
-def device_fingerprint() -> str:
-    components = []
-    components.append(platform.system())
-    components.append(platform.machine())
-    components.append(platform.architecture()[0])
-    components.append(str(struct.calcsize("P") * 8))
-    components.append(str(os.cpu_count()))
+def verify_hmac(data: str, signature: str, key: str = None) -> bool:
+    expected = compute_hmac(data, key)
+    return hmac.compare_digest(expected, signature)
 
-    android_props = ['ro.serialno', 'ro.product.device', 'ro.product.model']
-    found_android = False
-    for prop in android_props:
-        val = get_android_prop(prop)
-        if val:
-            components.append(val)
-            found_android = True
-
-    if not found_android:
-        mac = uuid.getnode()
-        if mac & 0xFFFFFFFFFFFF:
-            mac_str = f"{mac:012X}"
-            components.append(mac_str)
-        else:
-            components.append("UNKNOWN-MAC")
-
-    raw = "|".join(components)
-    return hashlib.sha512(raw.encode()).hexdigest()
-
+# ============= UID GENERATOR CORE =============
 class UIDGenerator:
     def __init__(self):
         self.battlefield_mode = True
         self.generated_ids = set()
+        self.fingerprint = device_fingerprint_enhanced()
     
     def _generate_scr160(self) -> str:
         try:
@@ -172,39 +275,35 @@ class UIDGenerator:
     
     def generate(self, format_type: str = "DEFAULT", prefix: str = "UID") -> dict:
         timestamp = datetime.now().isoformat()
-        fingerprint = device_fingerprint()[:32]
-        
+        fingerprint = self.fingerprint
         result = {
             "timestamp": timestamp,
             "fingerprint": fingerprint,
             "version": VERSION,
             "formats": {}
         }
-        
         if format_type in ["DEFAULT", "ALL"]:
             uid = self._generate_custom_format(prefix)
-            checksum = zlib.crc32(uid.encode()) & 0xFFFFFFFF
-            uid = f"{uid}-{checksum:08X}"
+            hmac_sig = compute_hmac(uid)
+            uid = f"{uid}-{hmac_sig[:8].upper()}"
             result["formats"]["default"] = uid
-        
         if format_type in ["SCRU160", "ALL"]:
             result["formats"]["scru160"] = self._generate_scr160()
-        
         if format_type in ["NANO", "ALL"]:
             result["formats"]["nano"] = self._generate_nanoid()
-        
         if format_type in ["UUID4", "ALL"]:
             result["formats"]["uuid4"] = str(uuid.uuid4()).upper()
-        
+        result["fingerprint_binding"] = compute_hmac(
+            f"{result['formats'].get('default', '')}|{fingerprint}"
+        )
         if self.battlefield_mode:
             for fmt, uid in result["formats"].items():
                 if uid in self.generated_ids:
-                    LOG_WARN(f"Collision detected on {fmt}! Regenerating...")
                     return self.generate(format_type, prefix)
                 self.generated_ids.add(uid)
-        
         return result
 
+# ============= UTILITY =============
 def get_expire_text(expire_dict):
     parts = []
     name_map = {
@@ -225,12 +324,12 @@ def expire_delta_from_text(expire_text):
         parts = expire_text.split()
         num = int(parts[0])
         unit = parts[1].lower()
-        if "year" in unit: return timedelta(days=num*365)
-        if "month" in unit: return timedelta(days=num*30)
-        if "day" in unit: return timedelta(days=num)
-        if "hour" in unit: return timedelta(hours=num)
-        if "minute" in unit: return timedelta(minutes=num)
-        if "second" in unit: return timedelta(seconds=num)
+        if "years" in unit: return timedelta(days=num*365)
+        if "months" in unit: return timedelta(days=num*30)
+        if "days" in unit: return timedelta(days=num)
+        if "hours" in unit: return timedelta(hours=num)
+        if "minutes" in unit: return timedelta(minutes=num)
+        if "seconds" in unit: return timedelta(seconds=num)
     except:
         pass
     return timedelta(days=365)
@@ -251,43 +350,30 @@ def show_help():
     title = f"UID GENERATOR v{VERSION}"
     left_pad = (inner_width - len(title)) // 2
     right_pad = inner_width - len(title) - left_pad
-
     color = Fore.MAGENTA + BOLD
-
     top_border = "╔" + "═" * inner_width + "╗"
     bottom_border = "╚" + "═" * inner_width + "╝"
     title_line = "║" + " " * left_pad + title + " " * right_pad + "║"
-
     print(color + "-" * BOX_WIDTH + RESET)
     print(color + top_border + RESET)
     print(color + title_line + RESET)
     print(color + bottom_border + RESET)
-
     print(f"\n{Fore.GREEN}{BOLD}▶ AVAILABLE COMMANDS:{RESET}")
-    print(f"  python UIDGenerator.py --create [FORMAT]    Create a new UID")
-    print(f"  python UIDGenerator.py --check              Check UID status")
-    print(f"  python UIDGenerator.py --renew <PWD>        Extend UID validity")
-    print(f"  python UIDGenerator.py --show-password      Display password")
-    print(f"  python UIDGenerator.py --delete             Delete UID file")
-    print(f"  python UIDGenerator.py --export             Export to JSON")
-    print(f"  python UIDGenerator.py --verify <UID>       Verify an existing UID")
-    
-    print(f"\n{Fore.CYAN}{BOLD}▶ ID FORMATS:{RESET}")
-    print(f"  DEFAULT   : XX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXXXXXX (with checksum)")
-    print(f"  SCRU160   : 32-char base32hex (time-sortable)")
-    print(f"  NANO      : URL-friendly crypto-secure ID")
-    print(f"  UUID4     : Standard UUID4")
-    print(f"  ALL       : Generate all formats at once")
-    
-    print(f"\n{Fore.YELLOW}{BOLD}▶ EXAMPLES:{RESET}")
+    print(f"  python UIDGenerator.py --create [FORMAT]")
+    print(f"  python UIDGenerator.py --check")
+    print(f"  python UIDGenerator.py --renew <PWD>")
+    print(f"  python UIDGenerator.py --show-password")
+    print(f"  python UIDGenerator.py --delete")
+    print(f"  python UIDGenerator.py --export")
+    print(f"  python UIDGenerator.py --verify <UID>")
+    print(f"\n{Fore.CYAN}{BOLD}▶ FORMATS:{RESET} DEFAULT, SCRU160, NANO, UUID4, ALL")
+    print(f"\n{Fore.YELLOW}{BOLD}▶ EXAMPLE:{RESET}")
     print(f"  python UIDGenerator.py --create DEFAULT")
-    print(f"  python UIDGenerator.py --create ALL")
-    
     print(color + "-" * BOX_WIDTH + RESET + "\n")
 
+# ============= MAIN =============
 def main():
     args = sys.argv[1:]
-    
     if not args or "--help" in args or "-h" in args:
         show_help()
         return
@@ -301,19 +387,17 @@ def main():
         
         format_type = args[1].upper() if len(args) > 1 else "DEFAULT"
         valid_formats = ["DEFAULT", "SCRU160", "NANO", "UUID4", "ALL"]
-        
         if format_type not in valid_formats:
-            LOG_ERROR(f"Invalid format! Use: {', '.join(valid_formats)}")
+            LOG_ERROR(f"Invalid format! Valid: {', '.join(valid_formats)}")
             return
         
-        print(f"\n{Fore.CYAN}{BOLD}SELECT EXPIRATION UNIT (SECONDS - YEARS):{RESET}")
+        print(f"\n{Fore.CYAN}{BOLD}CHOOSE TIME UNIT (SECONDS TO YEARS):{RESET}")
         print(f" {Fore.WHITE}1. Seconds   2. Minutes   3. Hours")
-        print(f" {Fore.WHITE}4. Days      5. Months   6. Years")
+        print(f" {Fore.WHITE}4. Days      5. Months    6. Years")
         
         expire_dict = {"years":0, "months":0, "days":0, "hours":0, "minutes":0, "seconds":0}
-        
         try:
-            choice = input(f"\n{Fore.WHITE}Enter choice (1-6): {Fore.YELLOW}").strip()
+            choice = input(f"\n{Fore.WHITE}Enter number (1-6): {Fore.YELLOW}").strip()
             unit_map = {
                 "1": "seconds", "2": "minutes", "3": "hours",
                 "4": "days", "5": "months", "6": "years"
@@ -335,60 +419,78 @@ def main():
                 LOG_ERROR("Invalid choice!")
                 return
         except ValueError:
-            LOG_ERROR("Input must be a number!")
+            LOG_ERROR("Please enter a number!")
             return
         
         expire_text = get_expire_text(expire_dict)
-        LOG_INFO(f"Expiry set to: {expire_text}")
         
-        LOG_INFO(f"Generating {format_type} UID...")
+        # === PROGRESS BAR ===
+        total_steps = 100
+        progress_bar._start_time = time.time()
         
+        # Step 1: Generate UID
+        for i in range(1, 40):
+            progress_bar(i, total_steps, prefix='Progress', suffix='Generating UID...', length=None)
+            time.sleep(0.015)
         uid_data = generator.generate(format_type, prefix="UID")
+        
+        # Step 2: Encrypt
+        for i in range(40, 70):
+            progress_bar(i, total_steps, prefix='Progress', suffix='Encrypting data...', length=None)
+            time.sleep(0.015)
         raw_password = secrets.token_urlsafe(16)
         encrypted_password = triple_encrypt(raw_password, XOR_KEY)
         
+        # Step 3: Save file
+        uid_json = json.dumps(uid_data)
+        data_hmac = compute_hmac(uid_json)
         with open(FILE_NAME, "w") as f:
-            f.write(f"""# UID Information
+            f.write(f"""# UID Information v{VERSION}
 # Generated: {uid_data['timestamp']}
 
-UID_DATA : {json.dumps(uid_data)}
+UID_DATA : {uid_json}
 PASSWORD : {encrypted_password}
 FINGERPRINT : {uid_data['fingerprint']}
+FINGERPRINT_BINDING : {uid_data.get('fingerprint_binding', 'N/A')}
 CREATED_AT : {uid_data['timestamp']}
 EXPIRY : {expire_text}
-
-# INTEGRITY CHECKSUM
-CHECKSUM : {hashlib.sha256(json.dumps(uid_data).encode()).hexdigest()[:16]}
+HMAC_SIG : {data_hmac}
 """)
+        for i in range(70, 101):
+            progress_bar(i, total_steps, prefix='Progress', suffix='Saving file...', length=None)
+            time.sleep(0.015)
+        progress_bar(total_steps, total_steps, prefix='Progress', suffix='Done!', length=None)
         
-        LOG_SUCCESS("UID created successfully!")
+        LOG_SUCCESS("UID successfully created!")
         print(f"\n{Fore.WHITE}{'═'*60}")
-        LOG_INFO(f"UID (default) : {Fore.YELLOW}{BOLD}{uid_data['formats'].get('default', 'N/A')}")
-        LOG_INFO(f"SCRU160      : {Fore.YELLOW}{BOLD}{uid_data['formats'].get('scru160', 'N/A')}")
-        LOG_INFO(f"NANO ID      : {Fore.YELLOW}{BOLD}{uid_data['formats'].get('nano', 'N/A')}")
-        LOG_INFO(f"PASSWORD     : {Fore.RED}{BOLD}{raw_password}")
-        LOG_INFO(f"FINGERPRINT  : {Fore.CYAN}{uid_data['fingerprint'][:16]}...")
-        LOG_INFO(f"EXPIRY       : {Fore.YELLOW}{expire_text}")
+        LOG_INFO(f"UID (default)      : {Fore.YELLOW}{BOLD}{uid_data['formats'].get('default', 'N/A')}")
+        LOG_INFO(f"PASSWORD           : {Fore.RED}{BOLD}{raw_password}")
+        LOG_INFO(f"EXPIRY             : {Fore.YELLOW}{expire_text}")
+        LOG_INFO(f"FINGERPRINT        : {Fore.CYAN}{uid_data['fingerprint']}")
+        LOG_INFO(f"HMAC SIGNATURE     : {Fore.MAGENTA}{data_hmac}")
+        LOG_INFO(f"FINGERPRINT BINDING: {Fore.BLUE}{uid_data.get('fingerprint_binding', 'N/A')}")
+        LOG_INFO(f"CREATED AT         : {Fore.WHITE}{uid_data['timestamp']}")
+        LOG_INFO(f"VERSION            : {Fore.GREEN}{VERSION}")
         print(f"{Fore.WHITE}{'═'*60}")
         return
     
+    # ============= --check (show all info) =============
     if args[0] == "--check":
         if not os.path.exists(FILE_NAME):
-            LOG_ERROR("UID not found. Create one with --create.")
+            LOG_ERROR("UID file not found.")
             return
-        
         with open(FILE_NAME, "r") as f:
             content = f.read()
-        
         uid_data_str = re.search(r"UID_DATA\s*:\s*({.*})", content, re.DOTALL)
         fp_str = re.search(r"FINGERPRINT\s*:\s*(\S+)", content)
+        fp_binding_str = re.search(r"FINGERPRINT_BINDING\s*:\s*(\S+)", content)
         created_str = re.search(r"CREATED_AT\s*:\s*(\S+)", content)
         expiry_str = re.search(r"EXPIRY\s*:\s*(.+)", content)
-        
+        hmac_sig_str = re.search(r"HMAC_SIG\s*:\s*(\S+)", content)
+        pwd_enc_str = re.search(r"PASSWORD\s*:\s*(\S+)", content)
         if not uid_data_str or not fp_str or not created_str or not expiry_str:
-            LOG_ERROR("Corrupted UID file.")
+            LOG_ERROR("UID file corrupted.")
             return
-        
         try:
             uid_json = json.loads(uid_data_str.group(1))
         except json.JSONDecodeError:
@@ -398,40 +500,67 @@ CHECKSUM : {hashlib.sha256(json.dumps(uid_data).encode()).hexdigest()[:16]}
                     uid_json = json.loads(raw_json)
                     break
             else:
-                LOG_ERROR("Cannot parse UID_DATA.")
+                LOG_ERROR("Failed to parse UID_DATA.")
                 return
-        
         stored_fingerprint = fp_str.group(1).strip()
+        stored_fp_binding = fp_binding_str.group(1).strip() if fp_binding_str else "N/A"
         created_at = datetime.fromisoformat(created_str.group(1).strip())
         expire_text = expiry_str.group(1).strip()
+        stored_hmac = hmac_sig_str.group(1).strip() if hmac_sig_str else None
+        stored_pwd_enc = pwd_enc_str.group(1).strip() if pwd_enc_str else None
         
-        current_fp = device_fingerprint()[:32]
+        current_fp = device_fingerprint_enhanced()
+        valid = True
+        
+        # Verify fingerprint
         if stored_fingerprint != current_fp:
-            LOG_ERROR("Access denied! Device fingerprint mismatch.")
-            LOG_INFO(f"Stored: {stored_fingerprint}")
-            LOG_INFO(f"Current: {current_fp}")
-            return
+            LOG_ERROR("❌ ACCESS DENIED! Fingerprint mismatch.")
+            valid = False
+        else:
+            LOG_SUCCESS("✅ Fingerprint matches.")
         
+        # Verify HMAC
+        if stored_hmac:
+            uid_json_str = json.dumps(uid_json)
+            if verify_hmac(uid_json_str, stored_hmac):
+                LOG_SUCCESS("✅ HMAC-SHA256 integrity valid.")
+            else:
+                LOG_ERROR("❌ HMAC integrity FAIL! Data tampered.")
+                valid = False
+        else:
+            LOG_WARN("HMAC not found (old version).")
+        
+        # Check expiry
         duration = expire_delta_from_text(expire_text)
         expire_date = created_at + duration
         remain = int((expire_date - datetime.now()).total_seconds())
-        
         if remain <= 0:
-            LOG_ERROR(f"UID expired on {expire_date.strftime('%Y-%m-%d %H:%M:%S')}")
+            LOG_ERROR(f"❌ UID expired on {expire_date.strftime('%Y-%m-%d %H:%M:%S')}")
+            valid = False
         else:
-            LOG_SUCCESS("UID is valid.")
-            LOG_INFO(f"Time remaining: {Fore.GREEN}{human_time(remain)}")
-            LOG_INFO(f"Expires: {expire_date.strftime('%Y-%m-%d %H:%M:%S')}")
+            LOG_SUCCESS(f"✅ UID not expired. Remaining: {human_time(remain)}")
+        
+        # Show all info
+        print(f"\n{Fore.WHITE}{'═'*60}")
+        LOG_INFO(f"UID (default)      : {Fore.YELLOW}{BOLD}{uid_json.get('formats', {}).get('default', 'N/A')}")
+        LOG_INFO(f"PASSWORD (enc)     : {Fore.RED}{stored_pwd_enc if stored_pwd_enc else 'N/A'}")
+        LOG_INFO(f"EXPIRY             : {Fore.YELLOW}{expire_text}")
+        LOG_INFO(f"FINGERPRINT        : {Fore.CYAN}{stored_fingerprint}")
+        LOG_INFO(f"HMAC SIGNATURE     : {Fore.MAGENTA}{stored_hmac if stored_hmac else 'N/A'}")
+        LOG_INFO(f"FINGERPRINT BINDING: {Fore.BLUE}{stored_fp_binding}")
+        LOG_INFO(f"CREATED AT         : {Fore.WHITE}{created_at.isoformat()}")
+        LOG_INFO(f"VERSION            : {Fore.GREEN}{uid_json.get('version', 'N/A')}")
+        LOG_INFO(f"STATUS             : {Fore.GREEN if valid else Fore.RED}{'VALID' if valid else 'INVALID'}")
+        print(f"{Fore.WHITE}{'═'*60}")
         return
     
+    # ============= OTHER COMMANDS (unchanged) =============
     if args[0] == "--show-password":
         if not os.path.exists(FILE_NAME):
             LOG_ERROR("File not found.")
             return
-        
         with open(FILE_NAME, "r") as f:
             content = f.read()
-        
         pwd_match = re.search(r"PASSWORD\s*:\s*(\S+)", content)
         if not pwd_match:
             LOG_ERROR("Password not found in file.")
@@ -440,22 +569,17 @@ CHECKSUM : {hashlib.sha256(json.dumps(uid_data).encode()).hexdigest()[:16]}
         try:
             decrypted = triple_decrypt(encrypted, XOR_KEY)
             LOG_INFO(f"Password: {Fore.RED}{BOLD}{decrypted}")
-        except Exception as e:
+        except:
             LOG_ERROR("Failed to decrypt password.")
-            LOG_INFO("This may happen if you used an older version with random salt.")
-            LOG_INFO("Please delete UID.md and create a new one with this version.")
         return
     
     if args[0] == "--renew" and len(args) > 1:
         provided_pwd = args[1]
-        
         if not os.path.exists(FILE_NAME):
             LOG_ERROR("File not found.")
             return
-        
         with open(FILE_NAME, "r") as f:
             content = f.read()
-        
         pwd_match = re.search(r"PASSWORD\s*:\s*(\S+)", content)
         if not pwd_match:
             LOG_ERROR("Password not found.")
@@ -469,29 +593,51 @@ CHECKSUM : {hashlib.sha256(json.dumps(uid_data).encode()).hexdigest()[:16]}
         except:
             LOG_ERROR("Failed to verify password.")
             return
-        
         expiry_match = re.search(r"EXPIRY\s*:\s*(.+)", content)
         if not expiry_match:
             LOG_ERROR("Expiry not found.")
             return
         expire_text = expiry_match.group(1).strip()
-        
         lines = content.splitlines()
         new_lines = []
+        uid_json = None
         for line in lines:
             if line.strip().startswith("CREATED_AT"):
                 new_lines.append(f"CREATED_AT : {datetime.now().isoformat()}")
             elif line.strip().startswith("EXPIRY"):
                 new_lines.append(f"EXPIRY : {expire_text}")
+            elif line.strip().startswith("UID_DATA"):
+                raw_json = line.split(":", 1)[1].strip()
+                try:
+                    uid_json = json.loads(raw_json)
+                    uid_json['timestamp'] = datetime.now().isoformat()
+                    new_uid_json = json.dumps(uid_json)
+                    new_lines.append(f"UID_DATA : {new_uid_json}")
+                    new_hmac = compute_hmac(new_uid_json)
+                except:
+                    new_lines.append(line)
+            elif line.strip().startswith("HMAC_SIG"):
+                if uid_json:
+                    new_uid_json = json.dumps(uid_json)
+                    new_hmac = compute_hmac(new_uid_json)
+                    new_lines.append(f"HMAC_SIG : {new_hmac}")
+                else:
+                    new_lines.append(line)
+            elif line.strip().startswith("FINGERPRINT_BINDING"):
+                if uid_json:
+                    default_uid = uid_json.get('formats', {}).get('default', '')
+                    fp = device_fingerprint_enhanced()
+                    new_binding = compute_hmac(f"{default_uid}|{fp}")
+                    new_lines.append(f"FINGERPRINT_BINDING : {new_binding}")
+                else:
+                    new_lines.append(line)
             else:
                 new_lines.append(line)
-        
         with open(FILE_NAME, "w") as f:
             f.write("\n".join(new_lines))
-        
         LOG_SUCCESS("UID renewed successfully!")
         LOG_INFO(f"New CREATED_AT: {datetime.now().isoformat()}")
-        LOG_INFO(f"Expiry remains: {expire_text}")
+        LOG_INFO(f"Expiry unchanged: {expire_text}")
         return
     
     if args[0] == "--delete":
@@ -506,49 +652,40 @@ CHECKSUM : {hashlib.sha256(json.dumps(uid_data).encode()).hexdigest()[:16]}
         if not os.path.exists(FILE_NAME):
             LOG_ERROR("File not found.")
             return
-        
         with open(FILE_NAME, "r") as f:
             content = f.read()
-        
         export_data = {}
         for line in content.splitlines():
             if ":" in line and not line.startswith("#"):
                 key, value = line.split(":", 1)
                 export_data[key.strip()] = value.strip()
-        
         with open("uid_export.json", "w") as f:
             json.dump(export_data, f, indent=2)
-        
-        LOG_SUCCESS("Exported to uid_export.json")
+        LOG_SUCCESS("Exported to uid_export.json.")
         return
     
     if args[0] == "--verify" and len(args) > 1:
         uid_to_verify = args[1].strip()
-        
         if '-' not in uid_to_verify:
-            LOG_ERROR("Invalid UID format. Must contain dashes.")
+            LOG_ERROR("Invalid UID format (missing hyphens).")
             return
         parts = uid_to_verify.split('-')
         if len(parts) < 2:
-            LOG_ERROR("Invalid UID format. Expected at least two parts.")
+            LOG_ERROR("Invalid UID format (too few parts).")
             return
-        
         if not os.path.exists(FILE_NAME):
-            LOG_ERROR("UID file not found. Cannot verify.")
+            LOG_ERROR("UID file not found.")
             return
-        
         with open(FILE_NAME, "r") as f:
             content = f.read()
-        
         uid_data_str = re.search(r"UID_DATA\s*:\s*({.*})", content, re.DOTALL)
         fp_match = re.search(r"FINGERPRINT\s*:\s*(\S+)", content)
         created_match = re.search(r"CREATED_AT\s*:\s*(\S+)", content)
         expiry_match = re.search(r"EXPIRY\s*:\s*(.+)", content)
-        
+        hmac_sig_match = re.search(r"HMAC_SIG\s*:\s*(\S+)", content)
         if not uid_data_str or not fp_match or not created_match or not expiry_match:
-            LOG_ERROR("Corrupted UID file.")
+            LOG_ERROR("UID file corrupted.")
             return
-        
         try:
             uid_json = json.loads(uid_data_str.group(1))
         except json.JSONDecodeError:
@@ -558,50 +695,35 @@ CHECKSUM : {hashlib.sha256(json.dumps(uid_data).encode()).hexdigest()[:16]}
                     uid_json = json.loads(raw_json)
                     break
             else:
-                LOG_ERROR("Cannot parse UID_DATA.")
+                LOG_ERROR("Failed to parse UID_DATA.")
                 return
-        
         stored_fingerprint = fp_match.group(1).strip()
         created_at = datetime.fromisoformat(created_match.group(1).strip())
         expire_text = expiry_match.group(1).strip()
         stored_default = uid_json.get('formats', {}).get('default')
+        stored_hmac = hmac_sig_match.group(1).strip() if hmac_sig_match else None
         if not stored_default:
-            LOG_ERROR("No default UID found in file.")
+            LOG_ERROR("No default UID in file.")
             return
-        
         if uid_to_verify != stored_default:
-            LOG_ERROR("❌ Provided UID does NOT match the stored UID.")
+            LOG_ERROR("❌ UID does not match stored UID.")
             return
-        
-        current_fp = device_fingerprint()[:32]
+        current_fp = device_fingerprint_enhanced()
         if stored_fingerprint != current_fp:
-            LOG_ERROR("❌ Device fingerprint mismatch.")
-            LOG_INFO(f"Stored: {stored_fingerprint}")
-            LOG_INFO(f"Current: {current_fp}")
+            LOG_ERROR("❌ Fingerprint mismatch.")
             return
-        
-        duration = expire_delta_from_text(expire_text)
-        expire_date = created_at + duration
-        remain = int((expire_date - datetime.now()).total_seconds())
-        if remain <= 0:
-            LOG_ERROR(f"❌ UID expired on {expire_date.strftime('%Y-%m-%d %H:%M:%S')}")
-            return
-        
-        checksum_str = parts[-1]
+        if stored_hmac:
+            uid_json_str = json.dumps(uid_json)
+            if not verify_hmac(uid_json_str, stored_hmac):
+                LOG_ERROR("❌ HMAC integrity FAIL.")
+                return
         body = '-'.join(parts[:-1])
-        computed = zlib.crc32(body.encode()) & 0xFFFFFFFF
-        computed_hex = f"{computed:08X}"
-        
-        LOG_INFO(f"Stored UID      : {stored_default}")
-        LOG_INFO(f"Provided UID    : {uid_to_verify}")
-        LOG_INFO(f"Body            : {body}")
-        LOG_INFO(f"Checksum        : {checksum_str}")
-        LOG_INFO(f"Computed        : {computed_hex}")
-        
-        if checksum_str.upper() == computed_hex:
-            LOG_SUCCESS("✅ UID is VALID – matches stored ID, fingerprint, and not expired.")
+        hmac_part = parts[-1]
+        computed_hmac = compute_hmac(body)[:8].upper()
+        if hmac_part.upper() == computed_hmac:
+            LOG_SUCCESS("✅ UID VALID.")
         else:
-            LOG_ERROR("❌ UID checksum mismatch.")
+            LOG_ERROR("❌ UID HMAC mismatch.")
         return
     
     LOG_ERROR("Unknown command. Use --help.")
