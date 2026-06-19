@@ -1,7 +1,7 @@
 # UID-Generator
 ![Python](https://img.shields.io/badge/Python-3.11%2B-brightgreen?logo=python&logoColor=white)
 ![Version](https://img.shields.io/badge/Version-1.1.1%20Beta-blueviolet)
-![License](https://img.shields.io/github/license/Sketchware-TM/UID-Generator?logo=github)
+![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?logo=github)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20(WSL)%20%7C%20Android-lightgrey?logo=linux&logoColor=white)
 
 ## 🛡️ Military Grade UID Generator & Licensing System
